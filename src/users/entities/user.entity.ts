@@ -21,6 +21,7 @@ export class User {
   @Column({ name: 'last_name', length: 50 })
   lastName: string;
 
+  @Exclude()
   @Column({ name: 'password_hash' })
   passwordHash: string;
 
