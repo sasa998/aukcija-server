@@ -4,11 +4,10 @@ import {
   IsNumber,
   IsPositive,
   IsOptional,
-  IsArray,
-  IsUrl,
   MaxLength,
   Min,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 
 export class CreateAuctionDto {
   @IsString()
@@ -20,18 +19,15 @@ export class CreateAuctionDto {
   @IsNotEmpty()
   description: string;
 
+  @Type(() => Number)
   @IsNumber({ maxDecimalPlaces: 2 })
   @IsPositive()
   @Min(0.01)
   startingPrice: number;
 
   @IsOptional()
+  @Type(() => Number)
   @IsNumber({ maxDecimalPlaces: 2 })
   @IsPositive()
   buyoutPrice?: number;
-
-  @IsOptional()
-  @IsArray()
-  @IsUrl({}, { each: true })
-  images?: string[];
 }
