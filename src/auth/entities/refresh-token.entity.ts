@@ -16,7 +16,7 @@ export class RefreshToken {
   @Column({ name: 'user_id' })
   userId: string;
 
-  @Column({ name: 'token_hash' })
+  @Column({ name: 'token_hash', unique: true })
   tokenHash: string;
 
   @Column({ name: 'expires_at' })
