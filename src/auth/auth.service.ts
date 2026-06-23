@@ -11,6 +11,7 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { Resend } from 'resend';
 import { UsersService } from '../users/users.service';
+import { User } from '../users/entities/user.entity';
 import { RefreshToken } from './entities/refresh-token.entity';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
@@ -102,6 +103,8 @@ export class AuthService {
       );
     }
 
+    await this.refreshTokenRepository.delete({ userId: user.id });
+
     const accessToken = this.generateAccessToken(user.id, user.email);
     const { refreshToken, expiresAt } = this.generateRefreshToken();
     const tokenHash = crypto
@@ -119,7 +122,9 @@ export class AuthService {
     return { accessToken, refreshToken, user };
   }
 
-  async refresh(refreshToken: string) {
+  async refresh(
+    refreshToken: string,
+  ): Promise<{ accessToken: string; refreshToken: string; user: User }> {
     if (!refreshToken) {
       throw new UnauthorizedException('Refresh token is required');
     }
@@ -129,42 +134,50 @@ export class AuthService {
       .update(refreshToken)
       .digest('hex');
 
-    const storedToken = await this.refreshTokenRepository.findOne({
-      where: { tokenHash },
-    });
+    return this.refreshTokenRepository.manager.transaction(async (em) => {
+      // Pessimistic write lock: only one concurrent request can process
+      // this token at a time, preventing duplicate token creation.
+      // Later for better security and scaling switch to Token rotation + transaction
+      const storedToken = await em.findOne(RefreshToken, {
+        where: { tokenHash },
+        lock: { mode: 'pessimistic_write' },
+      });
 
-    if (!storedToken || storedToken.expiresAt < new Date()) {
-      if (storedToken) {
-        await this.refreshTokenRepository.delete(storedToken.id);
+      if (!storedToken) {
+        throw new UnauthorizedException('Invalid or expired refresh token');
       }
-      throw new UnauthorizedException('Invalid or expired refresh token');
-    }
 
-    const user = await this.usersService.findById(storedToken.userId);
-    if (!user) {
-      await this.refreshTokenRepository.delete(storedToken.id);
-      throw new UnauthorizedException('User not found');
-    }
+      if (storedToken.expiresAt < new Date()) {
+        await em.delete(RefreshToken, { id: storedToken.id });
+        throw new UnauthorizedException('Invalid or expired refresh token');
+      }
 
-    // Rotate refresh token
-    await this.refreshTokenRepository.delete(storedToken.id);
+      const user = await this.usersService.findById(storedToken.userId);
+      if (!user) {
+        await em.delete(RefreshToken, { id: storedToken.id });
+        throw new UnauthorizedException('User not found');
+      }
 
-    const accessToken = this.generateAccessToken(user.id, user.email);
-    const { refreshToken: newRefreshToken, expiresAt } =
-      this.generateRefreshToken();
-    const newTokenHash = crypto
-      .createHash('sha256')
-      .update(newRefreshToken)
-      .digest('hex');
+      // Rotate: delete old token, issue new one atomically
+      await em.delete(RefreshToken, { id: storedToken.id });
 
-    const rt = this.refreshTokenRepository.create({
-      userId: user.id,
-      tokenHash: newTokenHash,
-      expiresAt,
+      const accessToken = this.generateAccessToken(user.id, user.email);
+      const { refreshToken: newRefreshToken, expiresAt } =
+        this.generateRefreshToken();
+      const newTokenHash = crypto
+        .createHash('sha256')
+        .update(newRefreshToken)
+        .digest('hex');
+
+      const rt = em.create(RefreshToken, {
+        userId: user.id,
+        tokenHash: newTokenHash,
+        expiresAt,
+      });
+      await em.save(RefreshToken, rt);
+
+      return { accessToken, refreshToken: newRefreshToken, user };
     });
-    await this.refreshTokenRepository.save(rt);
-
-    return { accessToken, refreshToken: newRefreshToken };
   }
 
   async me(accessToken: string | undefined, refreshToken: string | undefined) {
@@ -177,20 +190,11 @@ export class AuthService {
       throw new UnauthorizedException('Authentication required');
     }
 
-    const { accessToken: newAccessToken, refreshToken: newRefreshToken } =
-      await this.refresh(refreshToken);
-
-    const tokenHash = crypto
-      .createHash('sha256')
-      .update(newRefreshToken)
-      .digest('hex');
-    const stored = await this.refreshTokenRepository.findOne({
-      where: { tokenHash },
-    });
-    const freshUser = await this.usersService.findById(stored!.userId);
-    if (!freshUser) {
-      throw new UnauthorizedException('User not found');
-    }
+    const {
+      accessToken: newAccessToken,
+      refreshToken: newRefreshToken,
+      user: freshUser,
+    } = await this.refresh(refreshToken);
 
     return {
       accessToken: newAccessToken,

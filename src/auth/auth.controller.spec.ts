@@ -4,6 +4,7 @@ import request from 'supertest';
 import cookieParser from 'cookie-parser';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { User } from '../users/entities/user.entity';
 
 describe('AuthController (integration)', () => {
   let app: INestApplication;
@@ -14,11 +15,16 @@ describe('AuthController (integration)', () => {
     >
   >;
 
-  const mockUser = {
+  const mockUser: User = {
     id: 'user-uuid-123',
     email: 'test@example.com',
     firstName: 'Test',
     lastName: 'User',
+    passwordHash: '$2a$12$hashedpassword',
+    isEmailVerified: true,
+    emailVerifyToken: null,
+    createdAt: new Date('2024-01-01'),
+    updatedAt: new Date('2024-01-01'),
   };
 
   beforeEach(async () => {
@@ -131,7 +137,7 @@ describe('AuthController (integration)', () => {
       authService.login.mockResolvedValue({
         accessToken: 'mock-access-token',
         refreshToken: 'mock-refresh-token',
-        user: mockUser as any,
+        user: mockUser,
       });
 
       const res = await request(app.getHttpServer())
@@ -166,14 +172,18 @@ describe('AuthController (integration)', () => {
 
   describe('GET /auth/me', () => {
     it('should return 200 with user when access token cookie is present', async () => {
-      authService.me.mockResolvedValue({ user: mockUser as any });
+      authService.me.mockResolvedValue({ user: mockUser });
 
       const res = await request(app.getHttpServer())
         .get('/auth/me')
         .set('Cookie', 'access_token=valid-token');
 
       expect(res.status).toBe(200);
-      expect(res.body.user).toEqual(mockUser);
+      expect(res.body.user).toEqual({
+        ...mockUser,
+        createdAt: mockUser.createdAt.toISOString(),
+        updatedAt: mockUser.updatedAt.toISOString(),
+      });
       expect(authService.me).toHaveBeenCalledWith('valid-token', undefined);
     });
 
@@ -181,7 +191,7 @@ describe('AuthController (integration)', () => {
       authService.me.mockResolvedValue({
         accessToken: 'new-access-token',
         refreshToken: 'new-refresh-token',
-        user: mockUser as any,
+        user: mockUser,
       });
 
       const res = await request(app.getHttpServer())
@@ -205,6 +215,7 @@ describe('AuthController (integration)', () => {
       authService.refresh.mockResolvedValue({
         accessToken: 'new-access-token',
         refreshToken: 'new-refresh-token',
+        user: mockUser,
       });
 
       const res = await request(app.getHttpServer())

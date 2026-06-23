@@ -13,6 +13,16 @@ type MockRefreshTokenRepo = {
   save: jest.Mock;
   findOne: jest.Mock;
   delete: jest.Mock;
+  manager: {
+    transaction: jest.Mock;
+  };
+};
+
+type MockEntityManager = {
+  findOne: jest.Mock;
+  delete: jest.Mock;
+  create: jest.Mock;
+  save: jest.Mock;
 };
 
 jest.mock('resend', () => ({
@@ -31,6 +41,7 @@ describe('AuthService', () => {
   let usersService: jest.Mocked<UsersService>;
   let jwtService: jest.Mocked<JwtService>;
   let refreshTokenRepo: MockRefreshTokenRepo;
+  let mockEntityManager: MockEntityManager;
 
   const mockUser = {
     id: 'user-uuid-123',
@@ -53,6 +64,13 @@ describe('AuthService', () => {
   };
 
   beforeEach(async () => {
+    mockEntityManager = {
+      findOne: jest.fn(),
+      delete: jest.fn().mockResolvedValue({ affected: 1 }),
+      create: jest.fn().mockReturnValue(mockStoredToken),
+      save: jest.fn().mockResolvedValue(mockStoredToken),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AuthService,
@@ -102,6 +120,13 @@ describe('AuthService', () => {
             save: jest.fn().mockResolvedValue(mockStoredToken),
             findOne: jest.fn(),
             delete: jest.fn().mockResolvedValue({ affected: 1 }),
+            manager: {
+              transaction: jest
+                .fn()
+                .mockImplementation((cb: (em: MockEntityManager) => unknown) =>
+                  cb(mockEntityManager),
+                ),
+            },
           },
         },
       ],
@@ -226,15 +251,17 @@ describe('AuthService', () => {
     const rawToken = 'raw-refresh-token-value';
 
     it('should delete old token, issue new tokens and save new token', async () => {
-      refreshTokenRepo.findOne.mockResolvedValue(mockStoredToken);
+      mockEntityManager.findOne.mockResolvedValue(mockStoredToken);
       usersService.findById.mockResolvedValue(mockUser);
 
       const result = await service.refresh(rawToken);
 
-      expect(refreshTokenRepo.delete).toHaveBeenCalledWith(mockStoredToken.id);
+      expect(mockEntityManager.delete).toHaveBeenCalledWith(RefreshToken, {
+        id: mockStoredToken.id,
+      });
       expect(result.accessToken).toBe('mock-access-token');
       expect(result.refreshToken).toBeDefined();
-      expect(refreshTokenRepo.save).toHaveBeenCalled();
+      expect(mockEntityManager.save).toHaveBeenCalled();
     });
 
     it('should throw UnauthorizedException when raw token is empty string', async () => {
@@ -244,7 +271,7 @@ describe('AuthService', () => {
     });
 
     it('should throw UnauthorizedException when token is not found in DB', async () => {
-      refreshTokenRepo.findOne.mockResolvedValue(null);
+      mockEntityManager.findOne.mockResolvedValue(null);
 
       await expect(service.refresh(rawToken)).rejects.toThrow(
         new UnauthorizedException('Invalid or expired refresh token'),
@@ -256,22 +283,26 @@ describe('AuthService', () => {
         ...mockStoredToken,
         expiresAt: new Date(Date.now() - 1000),
       };
-      refreshTokenRepo.findOne.mockResolvedValue(expired);
+      mockEntityManager.findOne.mockResolvedValue(expired);
 
       await expect(service.refresh(rawToken)).rejects.toThrow(
         new UnauthorizedException('Invalid or expired refresh token'),
       );
-      expect(refreshTokenRepo.delete).toHaveBeenCalledWith(expired.id);
+      expect(mockEntityManager.delete).toHaveBeenCalledWith(RefreshToken, {
+        id: expired.id,
+      });
     });
 
     it('should delete token and throw when user no longer exists', async () => {
-      refreshTokenRepo.findOne.mockResolvedValue(mockStoredToken);
+      mockEntityManager.findOne.mockResolvedValue(mockStoredToken);
       usersService.findById.mockResolvedValue(null);
 
       await expect(service.refresh(rawToken)).rejects.toThrow(
         new UnauthorizedException('User not found'),
       );
-      expect(refreshTokenRepo.delete).toHaveBeenCalledWith(mockStoredToken.id);
+      expect(mockEntityManager.delete).toHaveBeenCalledWith(RefreshToken, {
+        id: mockStoredToken.id,
+      });
     });
   });
 
@@ -300,23 +331,8 @@ describe('AuthService', () => {
       // access token verification fails
       jwtService.verifyAsync.mockRejectedValue(new Error('jwt expired'));
 
-      const newStoredToken = {
-        ...mockStoredToken,
-        id: 'rt-new',
-        tokenHash: 'new-hash',
-      };
-
-      // First findOne: called inside refresh() to look up old token
-      // Second findOne: called in me() after refresh to retrieve the newly saved token
-      refreshTokenRepo.findOne
-        .mockResolvedValueOnce(mockStoredToken)
-        .mockResolvedValueOnce(newStoredToken);
-
-      // First findById: called inside refresh() to verify user still exists
-      // Second findById: called in me() to retrieve freshUser
-      usersService.findById
-        .mockResolvedValueOnce(mockUser)
-        .mockResolvedValueOnce(mockUser);
+      mockEntityManager.findOne.mockResolvedValueOnce(mockStoredToken);
+      usersService.findById.mockResolvedValueOnce(mockUser);
 
       jwtService.sign.mockReturnValue('new-access-token');
 
