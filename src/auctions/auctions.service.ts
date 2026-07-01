@@ -11,6 +11,7 @@ import { paginate } from 'src/shared/pagination/paginate.util';
 import { PaginatedResponse } from 'src/shared/pagination/paginated.response';
 import { PaginationDto } from 'src/shared/pagination/pagination.dto';
 import { ConfigService } from '@nestjs/config';
+import { CategoryId } from 'src/lib/categories';
 
 const AUCTION_DURATION_HOURS = 48;
 
@@ -51,8 +52,12 @@ export class AuctionsService {
     return this.auctionRepository.save(auction);
   }
 
-  findAll(pagination: PaginationDto): Promise<PaginatedResponse<Auction>> {
+  findAll(
+    pagination: PaginationDto,
+    category?: CategoryId,
+  ): Promise<PaginatedResponse<Auction>> {
     return paginate(this.auctionRepository, pagination, {
+      where: category ? { category } : {},
       relations: { seller: true },
       order: { createdAt: 'DESC' },
     });

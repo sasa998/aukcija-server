@@ -22,6 +22,18 @@ import { JwtPayload } from '../auth/strategies/jwt.strategy';
 import { PaginationDto } from 'src/shared/pagination/pagination.dto';
 import { multerConfig } from 'src/image-upload/upload';
 import { FilesInterceptor } from '@nestjs/platform-express';
+import { CATEGORIES } from 'src/lib/categories';
+import type { CategoryId } from 'src/lib/categories';
+
+import { IsIn, IsOptional } from 'class-validator';
+
+const CATEGORY_IDS = CATEGORIES.map((c) => c.id);
+
+class AuctionQueryDto extends PaginationDto {
+  @IsOptional()
+  @IsIn(CATEGORY_IDS)
+  category?: CategoryId;
+}
 
 interface AuthenticatedRequest extends ExpressRequest {
   user: Pick<JwtPayload, 'sub'> & { id: string; email: string };
@@ -58,8 +70,8 @@ export class AuctionsController {
   }
 
   @Get()
-  findAll(@Query() pagination: PaginationDto) {
-    return this.auctionsService.findAll(pagination);
+  findAll(@Query() query: AuctionQueryDto) {
+    return this.auctionsService.findAll(query, query.category);
   }
 
   @Get(':id')
