@@ -7,6 +7,14 @@ import {
   JoinColumn,
 } from 'typeorm';
 import { User } from '../../users/entities/user.entity';
+import type { CategoryId } from 'src/lib/categories';
+
+enum AuctionStatus {
+  ACTIVE = 'ACTIVE',
+  ENDED = 'ENDED',
+  CANCELLED = 'CANCELLED',
+  NO_SALE = 'NO_SALE',
+}
 
 @Entity('auctions')
 export class Auction {
@@ -43,8 +51,19 @@ export class Auction {
   @Column({ name: 'images', type: 'jsonb', default: '[]' })
   images: string[];
 
+  @Column({
+    name: 'status',
+    type: 'enum',
+    enum: AuctionStatus,
+    default: AuctionStatus.ACTIVE,
+  })
+  status: AuctionStatus;
+
   @Column({ name: 'seller_id' })
   sellerId: string;
+
+  @Column({ name: 'category', type: 'varchar', length: 50, default: 'other' })
+  category: CategoryId;
 
   @ManyToOne(() => User, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'seller_id' })
