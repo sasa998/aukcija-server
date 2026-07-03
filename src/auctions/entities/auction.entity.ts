@@ -9,7 +9,7 @@ import {
 import { User } from '../../users/entities/user.entity';
 import type { CategoryId } from 'src/lib/categories';
 
-enum AuctionStatus {
+export enum AuctionStatus {
   ACTIVE = 'ACTIVE',
   ENDED = 'ENDED',
   CANCELLED = 'CANCELLED',
@@ -61,6 +61,19 @@ export class Auction {
 
   @Column({ name: 'seller_id' })
   sellerId: string;
+
+  @Column({ name: 'current_bidder_id', nullable: true })
+  currentBidderId: string | null;
+
+  @ManyToOne(() => User, { nullable: true })
+  @JoinColumn({ name: 'current_bidder_id' })
+  currentBidder: User | null;
+
+  @Column('decimal', { precision: 10, scale: 2, default: 1.0 })
+  minBidIncrement: number;
+
+  @Column({ type: 'int', default: 0 })
+  bidCount: number;
 
   @Column({ name: 'category', type: 'varchar', length: 50, default: 'other' })
   category: CategoryId;
