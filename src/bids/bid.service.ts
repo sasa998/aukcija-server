@@ -20,7 +20,7 @@ export interface PlaceBidResult {
   wasExtended: boolean;
 }
 
-const ANTI_SNIPE_WINDOW_MS = 2 * 60 * 1000; // extend if bid lands within last 2 min
+const ANTI_SNIPE_WINDOW_MS = 3 * 60 * 1000; // extend if bid lands within last 2 min
 const ANTI_SNIPE_EXTENSION_MS = 2 * 60 * 1000; // extend by 2 min
 
 @Injectable()
